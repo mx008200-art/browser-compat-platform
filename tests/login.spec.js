@@ -46,11 +46,25 @@ async function collectFormDiagnostics(page, diagnostics) {
   diagnostics.pageText = (await page.locator('body').innerText({ timeout: 3_000 }).catch(() => '')).slice(0, 8_000)
 }
 
-async function attachDiagnostics(testInfo, diagnostics) {
-  await testInfo.attach('login-diagnostics', {
+async function attachDiagnostics(testInfo, diagnostics, name = 'login-diagnostics') {
+  await testInfo.attach(name, {
     body: JSON.stringify(diagnostics, null, 2),
     contentType: 'application/json',
   })
+}
+
+async function runWithTimeout(task, timeoutMs, stepName) {
+  let timer
+  try {
+    return await Promise.race([
+      Promise.resolve().then(task),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${stepName} 超时（${timeoutMs}ms）`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
@@ -85,6 +99,21 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     loginButtonVisible: null,
     loginButtonEnabled: null,
     networkErrorVisible: false,
+    lastStep: null,
+    stepTimeline: [],
+  }
+
+  const runStep = async (name, task, timeoutMs = 15_000) => {
+    diagnostics.lastStep = name
+    diagnostics.stepTimeline.push({ name, startedAt: new Date().toISOString() })
+    try {
+      return await runWithTimeout(task, timeoutMs, name)
+    } catch (error) {
+      diagnostics.stepError = error instanceof Error ? error.message : String(error)
+      const attachmentName = `diagnostics-${diagnostics.stepTimeline.length}-${name}`.replace(/[^\w-]+/g, '-')
+      await attachDiagnostics(testInfo, diagnostics, attachmentName).catch(() => {})
+      throw error
+    }
   }
 
   page.on('pageerror', (error) => {
@@ -131,10 +160,12 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     'input[autocomplete="current-password"]',
   ])
 
-  await expect(phoneInput).toBeVisible()
-  await expect(passwordInput).toBeVisible()
-  await phoneInput.fill(phoneValue)
-  await passwordInput.fill(passwordValue)
+  await runStep('等待手机号输入框', () => expect(phoneInput).toBeVisible({ timeout: 10_000 }))
+  await runStep('等待密码输入框', () => expect(passwordInput).toBeVisible({ timeout: 10_000 }))
+  await runStep('填写手机号', () => phoneInput.fill(phoneValue, { timeout: 10_000 }), 12_000)
+  diagnostics.lastStep = '手机号填写完成'
+  await attachDiagnostics(testInfo, diagnostics, 'diagnostics-before-password-fill')
+  await runStep('填写密码', () => passwordInput.fill(passwordValue, { timeout: 10_000 }), 12_000)
 
   const rememberPassword = page.locator('input[type="checkbox"]').first()
   if (await rememberPassword.isVisible().catch(() => false)) {
