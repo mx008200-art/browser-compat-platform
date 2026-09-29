@@ -1,10 +1,9 @@
-const { defineConfig } = require('@playwright/test')
-
 // WebKit 在远程页面的字体请求迟迟不结束时，截图会一直卡在 document.fonts.ready。
 // CI 重点是记录页面状态，字体加载状态不应阻塞业务巡检。
 process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = '1'
 
-module.exports = defineConfig({
+// 不使用 defineConfig，兼容 Playwright 1.22 起的历史版本。
+module.exports = {
   testDir: './tests',
   outputDir: 'test-results',
   // macOS WebKit 首次启动、加载远程字体和完成首屏渲染都可能明显慢于 Chromium。
@@ -27,4 +26,4 @@ module.exports = defineConfig({
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
-})
+}
