@@ -63,6 +63,38 @@ async function fillInputWithFallback(locator, value, label) {
   }
 }
 
+async function clickWithFallback(locator, label) {
+  const historicalPlaywright = Boolean(process.env.PLAYWRIGHT_VERSION)
+  let domClickError = null
+
+  if (historicalPlaywright) {
+    try {
+      await locator.evaluate((element) => element.click())
+      return 'dom-click'
+    } catch (error) {
+      domClickError = error
+    }
+  }
+
+  let clickError = null
+  try {
+    await locator.click({ timeout: 8_000 })
+    return 'click'
+  } catch (error) {
+    clickError = error
+  }
+
+  try {
+    await locator.dispatchEvent('click')
+    return 'dispatch-event'
+  } catch (dispatchError) {
+    const domMessage = domClickError instanceof Error ? domClickError.message : String(domClickError)
+    const clickMessage = clickError instanceof Error ? clickError.message : String(clickError)
+    const dispatchMessage = dispatchError instanceof Error ? dispatchError.message : String(dispatchError)
+    throw new Error(`${label}的 DOM click/click/dispatch 回退均失败：dom=${domMessage}; click=${clickMessage}; dispatch=${dispatchMessage}`)
+  }
+}
+
 async function safeScreenshot(page, path, diagnostics) {
   try {
     await page.screenshot({
@@ -153,6 +185,7 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     loginButtonEnabled: null,
     phoneFillMethod: null,
     passwordFillMethod: null,
+    loginClickMethod: null,
     networkErrorVisible: false,
     lastStep: null,
     stepTimeline: [],
@@ -294,7 +327,11 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     throw new Error('登录按钮在填入账号密码后仍未启用。')
   }
 
-  await runStep('点击登录按钮', () => loginButton.click({ timeout: 10_000 }), 15_000)
+  diagnostics.loginClickMethod = await runStep(
+    '点击登录按钮',
+    () => clickWithFallback(loginButton, '登录按钮'),
+    20_000,
+  )
   await new Promise((resolve) => setTimeout(resolve, 8_000))
   await runWithTimeout(
     () => safeScreenshot(page, testInfo.outputPath('after-login-click.png'), diagnostics),
