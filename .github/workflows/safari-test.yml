@@ -1,0 +1,71 @@
+name: macOS WebKit 登录兼容性巡检
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '先选择测试环境；正式环境应在测试环境通过后再运行'
+        required: true
+        type: choice
+        options:
+          - test
+          - prod
+        default: test
+
+permissions:
+  contents: read
+
+jobs:
+  safari-webkit-login:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      TEST_TARGET: ${{ inputs.target }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 Playwright WebKit
+        run: npx playwright install webkit
+
+      - name: 运行测试环境巡检
+        if: inputs.target == 'test'
+        env:
+          LOGIN_PHONE: ${{ secrets.BRM_TEST_PHONE }}
+          LOGIN_PASSWORD: ${{ secrets.BRM_TEST_PASSWORD }}
+        run: npm test
+
+      - name: 运行正式环境巡检
+        if: inputs.target == 'prod'
+        env:
+          LOGIN_PHONE: ${{ secrets.BRM_PROD_PHONE }}
+          LOGIN_PASSWORD: ${{ secrets.BRM_PROD_PASSWORD }}
+        run: npm test
+
+      - name: 上传 Playwright 录像、截图和诊断结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-webkit-test-results-${{ github.run_number }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: 上传 HTML 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-webkit-playwright-report-${{ github.run_number }}
+          path: playwright-report/
+          if-no-files-found: warn
+          retention-days: 7
