@@ -1,3 +1,5 @@
+const fs = require('fs')
+const path = require('path')
 const { test, expect } = require('@playwright/test')
 
 const TARGETS = {
@@ -47,10 +49,9 @@ async function collectFormDiagnostics(page, diagnostics) {
 }
 
 async function attachDiagnostics(testInfo, diagnostics, name = 'login-diagnostics') {
-  await testInfo.attach(name, {
-    body: JSON.stringify(diagnostics, null, 2),
-    contentType: 'application/json',
-  })
+  const filePath = testInfo.outputPath(`${name}.json`)
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.writeFileSync(filePath, JSON.stringify(diagnostics, null, 2), 'utf8')
 }
 
 async function runWithTimeout(task, timeoutMs, stepName) {
@@ -106,12 +107,16 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   const runStep = async (name, task, timeoutMs = 15_000) => {
     diagnostics.lastStep = name
     diagnostics.stepTimeline.push({ name, startedAt: new Date().toISOString() })
+    console.log(`[step:start] ${name}`)
     try {
-      return await runWithTimeout(task, timeoutMs, name)
+      const result = await runWithTimeout(task, timeoutMs, name)
+      console.log(`[step:done] ${name}`)
+      return result
     } catch (error) {
       diagnostics.stepError = error instanceof Error ? error.message : String(error)
       const attachmentName = `diagnostics-${diagnostics.stepTimeline.length}-${name}`.replace(/[^\w-]+/g, '-')
-      await attachDiagnostics(testInfo, diagnostics, attachmentName).catch(() => {})
+      await attachDiagnostics(testInfo, diagnostics, attachmentName)
+      console.error(`[step:error] ${name}: ${diagnostics.stepError}`)
       throw error
     }
   }
@@ -140,7 +145,7 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     }
   })
 
-  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  await runStep('打开登录页', () => page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 }), 35_000)
 
   const phoneTab = page
     .locator('.login-type-btns .type-btn')
@@ -177,21 +182,37 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     'button[type="submit"]',
     'input[type="submit"]',
   ])
-  diagnostics.loginButtonCount = await loginButton.count().catch(() => 0)
-  diagnostics.loginButtonVisible = await loginButton.isVisible({ timeout: 5_000 }).catch(() => false)
+  diagnostics.loginButtonCount = await runWithTimeout(() => loginButton.count(), 5_000, '读取登录按钮数量').catch(() => 0)
+  diagnostics.loginButtonVisible = await runWithTimeout(
+    () => loginButton.isVisible({ timeout: 5_000 }),
+    7_000,
+    '读取登录按钮可见性',
+  ).catch(() => false)
   if (!diagnostics.loginButtonVisible) {
-    await collectFormDiagnostics(page, diagnostics)
-    await safeScreenshot(page, testInfo.outputPath('login-button-not-visible.png'), diagnostics)
+    await runWithTimeout(() => collectFormDiagnostics(page, diagnostics), 5_000, '收集登录按钮诊断').catch(() => {})
+    await runWithTimeout(
+      () => safeScreenshot(page, testInfo.outputPath('login-button-not-visible.png'), diagnostics),
+      5_000,
+      '登录按钮不可见截图',
+    ).catch(() => {})
     await attachDiagnostics(testInfo, diagnostics)
     throw new Error(`登录按钮不可见（匹配数量：${diagnostics.loginButtonCount}）。`)
   }
   diagnostics.loginButtonEnabled = await loginButton.isEnabled().catch(() => false)
 
-  await safeScreenshot(page, testInfo.outputPath('before-login-click.png'), diagnostics)
+  await runWithTimeout(
+    () => safeScreenshot(page, testInfo.outputPath('before-login-click.png'), diagnostics),
+    5_000,
+    '登录前截图',
+  ).catch(() => {})
 
   if (!diagnostics.loginButtonEnabled) {
-    await collectFormDiagnostics(page, diagnostics)
-    await safeScreenshot(page, testInfo.outputPath('login-button-disabled.png'), diagnostics)
+    await runWithTimeout(() => collectFormDiagnostics(page, diagnostics), 5_000, '收集禁用按钮诊断').catch(() => {})
+    await runWithTimeout(
+      () => safeScreenshot(page, testInfo.outputPath('login-button-disabled.png'), diagnostics),
+      5_000,
+      '禁用按钮截图',
+    ).catch(() => {})
     // 给页面一个短观察窗口，但不再调用 page.waitForTimeout，避免页面被关闭时覆盖真正诊断。
     await new Promise((resolve) => setTimeout(resolve, 8_000))
     await attachDiagnostics(testInfo, diagnostics)
@@ -199,10 +220,14 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   }
 
   await loginButton.click()
-  await page.waitForTimeout(8_000)
-  await safeScreenshot(page, testInfo.outputPath('after-login-click.png'), diagnostics)
+  await new Promise((resolve) => setTimeout(resolve, 8_000))
+  await runWithTimeout(
+    () => safeScreenshot(page, testInfo.outputPath('after-login-click.png'), diagnostics),
+    5_000,
+    '登录后截图',
+  ).catch(() => {})
 
-  await collectFormDiagnostics(page, diagnostics)
+  await runWithTimeout(() => collectFormDiagnostics(page, diagnostics), 5_000, '收集登录后诊断').catch(() => {})
   const bodyText = diagnostics.pageText
   diagnostics.networkErrorVisible = bodyText.includes('网络较差，请稍后重试')
 
