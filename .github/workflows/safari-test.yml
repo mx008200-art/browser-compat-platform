@@ -4,13 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: '先选择测试环境；正式环境应在测试环境通过后再运行'
+        description: '运行正式环境登录巡检'
         required: true
         type: choice
         options:
-          - test
           - prod
-        default: test
+        default: prod
 
 permissions:
   contents: read
@@ -39,13 +38,6 @@ jobs:
 
       - name: 安装 Playwright WebKit
         run: npx playwright install webkit
-
-      - name: 运行测试环境巡检
-        if: inputs.target == 'test'
-        env:
-          LOGIN_PHONE: ${{ secrets.BRM_TEST_PHONE }}
-          LOGIN_PASSWORD: ${{ secrets.BRM_TEST_PASSWORD }}
-        run: npm test
 
       - name: 运行正式环境巡检
         if: inputs.target == 'prod'
