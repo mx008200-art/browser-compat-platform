@@ -142,22 +142,22 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
 
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
-  const phoneTab = page.getByText(/^(Phone|手机号登录|手机登录)$/).first()
-  if (await phoneTab.isVisible().catch(() => false)) {
-    await phoneTab.click()
-  }
+  const phoneTab = page
+    .locator('.login-type-btns .type-btn')
+    .filter({ hasText: /^(Phone|手机号登录|手机登录)$/ })
+    .first()
+  await runStep('切换到手机号登录页签', () => expect(phoneTab).toBeVisible({ timeout: 5_000 }))
+  await runStep('点击手机号登录页签', () => phoneTab.click({ timeout: 8_000 }), 10_000)
 
   const phoneInput = firstLocator(page, [
-    'input[placeholder="请输入手机号"]',
-    'input[type="tel"]',
     'input[name="phone-account"]',
-    'input[autocomplete="username"]',
+    'input[type="tel"]',
+    'input[placeholder="请输入手机号"]',
   ])
   const passwordInput = firstLocator(page, [
+    'input[name="password"]',
     'input[placeholder="请输入密码"]',
     'input[type="password"]',
-    'input[name="password"]',
-    'input[autocomplete="current-password"]',
   ])
 
   await runStep('等待手机号输入框', () => expect(phoneInput).toBeVisible({ timeout: 10_000 }))
