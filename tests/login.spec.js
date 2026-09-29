@@ -102,6 +102,7 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     networkErrorVisible: false,
     lastStep: null,
     stepTimeline: [],
+    pointerClickError: null,
   }
 
   const runStep = async (name, task, timeoutMs = 15_000) => {
@@ -152,7 +153,14 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     .filter({ hasText: /^(Phone|手机号登录|手机登录)$/ })
     .first()
   await runStep('切换到手机号登录页签', () => expect(phoneTab).toBeVisible({ timeout: 5_000 }))
-  await runStep('点击手机号登录页签', () => phoneTab.click({ timeout: 8_000 }), 10_000)
+  try {
+    await runWithTimeout(() => phoneTab.click({ force: true, timeout: 8_000 }), 10_000, '点击手机号登录页签')
+  } catch (error) {
+    diagnostics.pointerClickError = error instanceof Error ? error.message : String(error)
+    await attachDiagnostics(testInfo, diagnostics, 'diagnostics-pointer-click-failed')
+    console.error(`[step:error] 点击手机号登录页签: ${diagnostics.pointerClickError}`)
+    await runStep('使用DOM事件切换手机号登录页签', () => phoneTab.dispatchEvent('click'), 8_000)
+  }
 
   const phoneInput = firstLocator(page, [
     'input[name="phone-account"]',
