@@ -11,7 +11,33 @@ function firstLocator(page, selectors) {
   return page.locator(selectors.join(', ')).first()
 }
 
+async function setInputValueByDom(locator, value) {
+  await locator.evaluate((element, nextValue) => {
+    const prototype = element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+    if (!setter) throw new Error('找不到输入框 value setter')
+    setter.call(element, nextValue)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+  }, value)
+}
+
 async function fillInputWithFallback(locator, value, label) {
+  const historicalPlaywright = Boolean(process.env.PLAYWRIGHT_VERSION)
+  let domError = null
+
+  // 历史 WebKit 的 fill/type 可能一直等待输入事件；先用原生 setter 触发页面框架事件。
+  if (historicalPlaywright) {
+    try {
+      await setInputValueByDom(locator, value)
+      return 'dom-event'
+    } catch (error) {
+      domError = error
+    }
+  }
+
   let fillError = null
   try {
     await locator.fill(value, { timeout: 8_000 })
@@ -26,16 +52,7 @@ async function fillInputWithFallback(locator, value, label) {
     return 'type'
   } catch (typeError) {
     try {
-      await locator.evaluate((element, nextValue) => {
-        const prototype = element instanceof HTMLTextAreaElement
-          ? HTMLTextAreaElement.prototype
-          : HTMLInputElement.prototype
-        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
-        if (!setter) throw new Error('找不到输入框 value setter')
-        setter.call(element, nextValue)
-        element.dispatchEvent(new Event('input', { bubbles: true }))
-        element.dispatchEvent(new Event('change', { bubbles: true }))
-      }, value)
+      await setInputValueByDom(locator, value)
       return 'dom-event'
     } catch (domError) {
       const fillMessage = fillError instanceof Error ? fillError.message : String(fillError)
