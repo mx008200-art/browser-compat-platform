@@ -25,8 +25,8 @@ permissions:
 
 jobs:
   safari-webkit-login:
-    # 历史 WebKit 二进制优先使用 Intel macOS runner，避免 ARM 架构兼容性干扰版本验证。
-    runs-on: macos-13
+    # 历史 WebKit 二进制优先使用当前仍可用的 Intel macOS runner，避免 ARM 架构兼容性干扰版本验证。
+    runs-on: macos-15-intel
     timeout-minutes: 10
     env:
       TEST_TARGET: ${{ inputs.target }}
