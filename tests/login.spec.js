@@ -81,6 +81,8 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     pageTitle: null,
     formState: null,
     pageText: '',
+    loginButtonCount: null,
+    loginButtonVisible: null,
     loginButtonEnabled: null,
     networkErrorVisible: false,
   }
@@ -144,7 +146,14 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     'button[type="submit"]',
     'input[type="submit"]',
   ])
-  await expect(loginButton).toBeVisible()
+  diagnostics.loginButtonCount = await loginButton.count().catch(() => 0)
+  diagnostics.loginButtonVisible = await loginButton.isVisible({ timeout: 5_000 }).catch(() => false)
+  if (!diagnostics.loginButtonVisible) {
+    await collectFormDiagnostics(page, diagnostics)
+    await safeScreenshot(page, testInfo.outputPath('login-button-not-visible.png'), diagnostics)
+    await attachDiagnostics(testInfo, diagnostics)
+    throw new Error(`登录按钮不可见（匹配数量：${diagnostics.loginButtonCount}）。`)
+  }
   diagnostics.loginButtonEnabled = await loginButton.isEnabled().catch(() => false)
 
   await safeScreenshot(page, testInfo.outputPath('before-login-click.png'), diagnostics)
