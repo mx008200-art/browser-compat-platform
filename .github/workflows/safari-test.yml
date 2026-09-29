@@ -50,7 +50,7 @@ jobs:
       - name: 切换历史 Playwright 版本
         run: |
           npm install --no-save --package-lock=false --force @playwright/test@${{ inputs.playwright_version }}
-          npm ls @playwright/test
+          node -p "require('@playwright/test/package.json').version"
           npx playwright --version
 
       - name: 安装 Playwright WebKit
