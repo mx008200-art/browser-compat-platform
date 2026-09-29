@@ -15,7 +15,7 @@ async function safeScreenshot(page, path, diagnostics) {
       path,
       fullPage: false,
       animations: 'disabled',
-      timeout: 5_000,
+      timeout: 3_000,
     })
   } catch (error) {
     diagnostics.screenshotErrors.push(error instanceof Error ? error.message : String(error))
@@ -23,6 +23,9 @@ async function safeScreenshot(page, path, diagnostics) {
 }
 
 test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
+  // 诊断截图、远程字体和 WebKit 首次渲染可能耗时，不能让它们抢占业务流程的总时限。
+  testInfo.setTimeout(120_000)
+
   const targetKey = process.env.TEST_TARGET || 'test'
   const targetUrl = TARGETS[targetKey]
   if (!targetUrl) throw new Error(`不支持的 TEST_TARGET: ${targetKey}`)
