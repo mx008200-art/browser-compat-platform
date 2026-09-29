@@ -10,16 +10,27 @@ on:
         options:
           - prod
         default: prod
+      playwright_version:
+        description: '选择要验证的历史 Playwright/WebKit 版本'
+        required: true
+        type: choice
+        options:
+          - 1.24.0
+          - 1.23.0
+          - 1.22.0
+        default: 1.24.0
 
 permissions:
   contents: read
 
 jobs:
   safari-webkit-login:
-    runs-on: macos-latest
+    # 历史 WebKit 二进制优先使用 Intel macOS runner，避免 ARM 架构兼容性干扰版本验证。
+    runs-on: macos-13
     timeout-minutes: 10
     env:
       TEST_TARGET: ${{ inputs.target }}
+      PLAYWRIGHT_VERSION: ${{ inputs.playwright_version }}
       # 避免 WebKit 截图无限等待 document.fonts.ready，导致测试流程无法进入登录点击。
       PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
 
@@ -36,6 +47,12 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 切换历史 Playwright 版本
+        run: |
+          npm install --no-save --package-lock=false --force @playwright/test@${{ inputs.playwright_version }}
+          npm ls @playwright/test
+          npx playwright --version
+
       - name: 安装 Playwright WebKit
         run: npx playwright install webkit
 
@@ -50,7 +67,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: safari-webkit-test-results-${{ github.run_number }}
+          name: safari-webkit-test-results-pw-${{ inputs.playwright_version }}-${{ github.run_number }}
           path: test-results/
           if-no-files-found: warn
           retention-days: 7
@@ -59,7 +76,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: safari-webkit-playwright-report-${{ github.run_number }}
+          name: safari-webkit-playwright-report-pw-${{ inputs.playwright_version }}-${{ github.run_number }}
           path: playwright-report/
           if-no-files-found: warn
           retention-days: 7
