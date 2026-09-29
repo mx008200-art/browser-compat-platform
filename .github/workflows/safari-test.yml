@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 10
     env:
       TEST_TARGET: ${{ inputs.target }}
+      # 避免 WebKit 截图无限等待 document.fonts.ready，导致测试流程无法进入登录点击。
+      PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
 
     steps:
       - name: 检出代码

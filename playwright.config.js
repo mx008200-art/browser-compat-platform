@@ -1,5 +1,9 @@
 const { defineConfig } = require('@playwright/test')
 
+// WebKit 在远程页面的字体请求迟迟不结束时，截图会一直卡在 document.fonts.ready。
+// CI 重点是记录页面状态，字体加载状态不应阻塞业务巡检。
+process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = '1'
+
 module.exports = defineConfig({
   testDir: './tests',
   outputDir: 'test-results',

@@ -22,6 +22,37 @@ async function safeScreenshot(page, path, diagnostics) {
   }
 }
 
+async function collectFormDiagnostics(page, diagnostics) {
+  diagnostics.finalUrl = page.url()
+  diagnostics.pageTitle = await page.title().catch(() => '')
+  diagnostics.formState = await page.evaluate(() => ({
+    inputs: Array.from(document.querySelectorAll('input')).map((input) => ({
+      type: input.type,
+      name: input.name,
+      placeholder: input.getAttribute('placeholder'),
+      valueLength: input.value?.length || 0,
+      disabled: input.disabled,
+      readOnly: input.readOnly,
+    })),
+    buttons: Array.from(document.querySelectorAll('button, input[type="submit"]')).map((button) => ({
+      tagName: button.tagName,
+      text: button.innerText || button.value || '',
+      disabled: button.disabled,
+      ariaDisabled: button.getAttribute('aria-disabled'),
+      className: button.className,
+      outerHTML: button.outerHTML.slice(0, 2000),
+    })),
+  })).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
+  diagnostics.pageText = (await page.locator('body').innerText({ timeout: 3_000 }).catch(() => '')).slice(0, 8_000)
+}
+
+async function attachDiagnostics(testInfo, diagnostics) {
+  await testInfo.attach('login-diagnostics', {
+    body: JSON.stringify(diagnostics, null, 2),
+    contentType: 'application/json',
+  })
+}
+
 test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   // 诊断截图、远程字体和 WebKit 首次渲染可能耗时，不能让它们抢占业务流程的总时限。
   testInfo.setTimeout(120_000)
@@ -47,6 +78,9 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     observedResponses: [],
     screenshotErrors: [],
     finalUrl: null,
+    pageTitle: null,
+    formState: null,
+    pageText: '',
     loginButtonEnabled: null,
     networkErrorVisible: false,
   }
@@ -116,13 +150,11 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   await safeScreenshot(page, testInfo.outputPath('before-login-click.png'), diagnostics)
 
   if (!diagnostics.loginButtonEnabled) {
-    await page.waitForTimeout(8_000)
+    await collectFormDiagnostics(page, diagnostics)
     await safeScreenshot(page, testInfo.outputPath('login-button-disabled.png'), diagnostics)
-    diagnostics.finalUrl = page.url()
-    await testInfo.attach('login-diagnostics', {
-      body: JSON.stringify(diagnostics, null, 2),
-      contentType: 'application/json',
-    })
+    // 给页面一个短观察窗口，但不再调用 page.waitForTimeout，避免页面被关闭时覆盖真正诊断。
+    await new Promise((resolve) => setTimeout(resolve, 8_000))
+    await attachDiagnostics(testInfo, diagnostics)
     throw new Error('登录按钮在填入账号密码后仍未启用。')
   }
 
@@ -130,14 +162,11 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   await page.waitForTimeout(8_000)
   await safeScreenshot(page, testInfo.outputPath('after-login-click.png'), diagnostics)
 
-  diagnostics.finalUrl = page.url()
-  const bodyText = await page.locator('body').innerText({ timeout: 5_000 }).catch(() => '')
+  await collectFormDiagnostics(page, diagnostics)
+  const bodyText = diagnostics.pageText
   diagnostics.networkErrorVisible = bodyText.includes('网络较差，请稍后重试')
 
-  await testInfo.attach('login-diagnostics', {
-    body: JSON.stringify(diagnostics, null, 2),
-    contentType: 'application/json',
-  })
+  await attachDiagnostics(testInfo, diagnostics)
 
   expect(diagnostics.networkErrorVisible, '检测到“网络较差，请稍后重试”').toBeFalsy()
 })
