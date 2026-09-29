@@ -243,9 +243,14 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   )
 
   const rememberPassword = page.locator('input[type="checkbox"]').first()
-  if (await rememberPassword.isVisible().catch(() => false)) {
-    if (!(await rememberPassword.isChecked())) await rememberPassword.check()
-  }
+  await runStep('处理记住密码', async () => {
+    const visible = await rememberPassword.isVisible({ timeout: 5_000 }).catch(() => false)
+    console.log(`[diagnostic] 记住密码可见=${visible}`)
+    if (!visible) return
+    const checked = await rememberPassword.isChecked().catch(() => false)
+    console.log(`[diagnostic] 记住密码已选=${checked}`)
+    if (!checked) await rememberPassword.check({ timeout: 8_000 })
+  }, 20_000)
 
   const loginButton = firstLocator(page, [
     'button.login-btn',
@@ -289,7 +294,7 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     throw new Error('登录按钮在填入账号密码后仍未启用。')
   }
 
-  await loginButton.click()
+  await runStep('点击登录按钮', () => loginButton.click({ timeout: 10_000 }), 15_000)
   await new Promise((resolve) => setTimeout(resolve, 8_000))
   await runWithTimeout(
     () => safeScreenshot(page, testInfo.outputPath('after-login-click.png'), diagnostics),
