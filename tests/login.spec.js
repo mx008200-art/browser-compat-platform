@@ -11,6 +11,41 @@ function firstLocator(page, selectors) {
   return page.locator(selectors.join(', ')).first()
 }
 
+async function fillInputWithFallback(locator, value, label) {
+  let fillError = null
+  try {
+    await locator.fill(value, { timeout: 8_000 })
+    return 'fill'
+  } catch (error) {
+    fillError = error
+  }
+
+  try {
+    await locator.click({ force: true, timeout: 5_000 })
+    await locator.type(value, { delay: 30, timeout: 8_000 })
+    return 'type'
+  } catch (typeError) {
+    try {
+      await locator.evaluate((element, nextValue) => {
+        const prototype = element instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype
+        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+        if (!setter) throw new Error('找不到输入框 value setter')
+        setter.call(element, nextValue)
+        element.dispatchEvent(new Event('input', { bubbles: true }))
+        element.dispatchEvent(new Event('change', { bubbles: true }))
+      }, value)
+      return 'dom-event'
+    } catch (domError) {
+      const fillMessage = fillError instanceof Error ? fillError.message : String(fillError)
+      const typeMessage = typeError instanceof Error ? typeError.message : String(typeError)
+      const domMessage = domError instanceof Error ? domError.message : String(domError)
+      throw new Error(`${label}的 fill/type/DOM 回退均失败：fill=${fillMessage}; type=${typeMessage}; dom=${domMessage}`)
+    }
+  }
+}
+
 async function safeScreenshot(page, path, diagnostics) {
   try {
     await page.screenshot({
@@ -99,6 +134,8 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     loginButtonCount: null,
     loginButtonVisible: null,
     loginButtonEnabled: null,
+    phoneFillMethod: null,
+    passwordFillMethod: null,
     networkErrorVisible: false,
     lastStep: null,
     stepTimeline: [],
@@ -175,10 +212,18 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
 
   await runStep('等待手机号输入框', () => expect(phoneInput).toBeVisible({ timeout: 10_000 }))
   await runStep('等待密码输入框', () => expect(passwordInput).toBeVisible({ timeout: 10_000 }))
-  await runStep('填写手机号', () => phoneInput.fill(phoneValue, { timeout: 10_000 }), 12_000)
+  diagnostics.phoneFillMethod = await runStep(
+    '填写手机号',
+    () => fillInputWithFallback(phoneInput, phoneValue, '手机号'),
+    30_000,
+  )
   diagnostics.lastStep = '手机号填写完成'
   await attachDiagnostics(testInfo, diagnostics, 'diagnostics-before-password-fill')
-  await runStep('填写密码', () => passwordInput.fill(passwordValue, { timeout: 10_000 }), 12_000)
+  diagnostics.passwordFillMethod = await runStep(
+    '填写密码',
+    () => fillInputWithFallback(passwordInput, passwordValue, '密码'),
+    30_000,
+  )
 
   const rememberPassword = page.locator('input[type="checkbox"]').first()
   if (await rememberPassword.isVisible().catch(() => false)) {
