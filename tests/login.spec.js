@@ -9,6 +9,19 @@ function firstLocator(page, selectors) {
   return page.locator(selectors.join(', ')).first()
 }
 
+async function safeScreenshot(page, path, diagnostics) {
+  try {
+    await page.screenshot({
+      path,
+      fullPage: false,
+      animations: 'disabled',
+      timeout: 5_000,
+    })
+  } catch (error) {
+    diagnostics.screenshotErrors.push(error instanceof Error ? error.message : String(error))
+  }
+}
+
 test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   const targetKey = process.env.TEST_TARGET || 'test'
   const targetUrl = TARGETS[targetKey]
@@ -29,6 +42,7 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
     consoleErrors: [],
     requestFailures: [],
     observedResponses: [],
+    screenshotErrors: [],
     finalUrl: null,
     loginButtonEnabled: null,
     networkErrorVisible: false,
@@ -96,11 +110,11 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
   await expect(loginButton).toBeVisible()
   diagnostics.loginButtonEnabled = await loginButton.isEnabled().catch(() => false)
 
-  await page.screenshot({ path: testInfo.outputPath('before-login-click.png'), fullPage: false })
+  await safeScreenshot(page, testInfo.outputPath('before-login-click.png'), diagnostics)
 
   if (!diagnostics.loginButtonEnabled) {
     await page.waitForTimeout(8_000)
-    await page.screenshot({ path: testInfo.outputPath('login-button-disabled.png'), fullPage: false })
+    await safeScreenshot(page, testInfo.outputPath('login-button-disabled.png'), diagnostics)
     diagnostics.finalUrl = page.url()
     await testInfo.attach('login-diagnostics', {
       body: JSON.stringify(diagnostics, null, 2),
@@ -111,7 +125,7 @@ test('手机号密码登录兼容性巡检', async ({ page }, testInfo) => {
 
   await loginButton.click()
   await page.waitForTimeout(8_000)
-  await page.screenshot({ path: testInfo.outputPath('after-login-click.png'), fullPage: false })
+  await safeScreenshot(page, testInfo.outputPath('after-login-click.png'), diagnostics)
 
   diagnostics.finalUrl = page.url()
   const bodyText = await page.locator('body').innerText({ timeout: 5_000 }).catch(() => '')
